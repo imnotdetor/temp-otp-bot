@@ -251,6 +251,27 @@ async def screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ Waiting for admin approval")
         context.user_data["awaiting_ss"] = False
 
+# ================= REFER =================
+async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    link = f"https://t.me/{context.bot.username}?start={uid}"
+
+    await q.answer()
+
+    text = (
+        "🎁 *Refer & Earn*\n\n"
+        "1 Successful Referral = 1 Point ✅\n\n"
+        "📌 Share this link with friends:\n"
+        f"`{link}`\n\n"
+        "⚠️ Friend must start the bot using this link"
+    )
+
+    # 🔥 IMPORTANT: reply_text (NOT edit)
+    await q.message.reply_text(
+        text,
+        parse_mode="Markdown"
+        )
 # ================= ADMIN APPROVE / REJECT =================
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
