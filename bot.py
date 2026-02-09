@@ -123,13 +123,6 @@ async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📲 *Select a number*",
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown"
-                  )
-
-    await q.answer()
-    await q.edit_message_text(
-        "📲 *Select a number*",
-        reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode="Markdown"
     )
 
 async def confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,6 +175,20 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# ================= OTP =================
+async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+
+    otp = random.randint(100000, 999999)
+
+    await q.answer()
+    await q.edit_message_text(
+        f"📩 *Your OTP*\n\n`{otp}`",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Back", callback_data="back")]
+        ]),
+        parse_mode="Markdown"
+    )
 # ================= DEPOSIT =================
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
