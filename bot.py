@@ -12,7 +12,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 MONGO_URI = os.getenv("MONGO_URI")
 
-================= MONGO =================
+#================= MONGO =================
 
 client = MongoClient(MONGO_URI)
 db = client["otpbot"]
@@ -78,13 +78,13 @@ if user["referred_by"] is None and context.args:
 
 await show_main_menu(update, context)
 
-================= BACK =================
+#================= BACK =================
 
 async def back(update: Update, context: ContextTypes.DEFAULT_TYPE):
 await update.callback_query.answer()
 await show_main_menu(update.callback_query, context)
 
-================= PROFILE =================
+#================= PROFILE =================
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 q = update.callback_query
@@ -101,7 +101,7 @@ await q.edit_message_text(
     parse_mode="Markdown"  
 )
 
-================= BUY NUMBERS =================
+#================= BUY NUMBERS =================
 
 async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 q = update.callback_query
@@ -187,7 +187,7 @@ await q.edit_message_text(
     parse_mode="Markdown"  
 )
 
-================= OTP =================
+#================= OTP =================
 
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
 q = update.callback_query
@@ -203,7 +203,7 @@ await q.edit_message_text(
     parse_mode="Markdown"  
 )
 
-================= DEPOSIT =================
+#================= DEPOSIT =================
 
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 q = update.callback_query
@@ -262,7 +262,7 @@ kb = [[
     await update.message.reply_text("⏳ Waiting for admin approval")  
     context.user_data["awaiting_ss"] = False
 
-================= REFER =================
+#================= REFER =================
 
 async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 q = update.callback_query
@@ -282,7 +282,7 @@ text = (
 # ✅ SAFE: reply_text + NO Markdown  
 await q.message.reply_text(text)
 
-================= ADMIN APPROVE / REJECT =================
+#================= ADMIN APPROVE / REJECT =================
 
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 q = update.callback_query
@@ -305,7 +305,7 @@ else:
     await context.bot.send_message(uid, "❌ Deposit rejected")  
     await q.edit_message_caption("Rejected ❌")
 
-================= ADMIN COMMANDS =================
+#================= ADMIN COMMANDS =================
 
 async def addpoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if update.effective_user.id != ADMIN_ID:
@@ -378,7 +378,7 @@ for n in numbers_col.find():
 
 await update.message.reply_text(text, parse_mode="Markdown")
 
-================= MAIN =================
+#================= MAIN =================
 
 def main():
 app = ApplicationBuilder().token(BOT_TOKEN).build()
