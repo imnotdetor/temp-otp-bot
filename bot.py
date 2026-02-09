@@ -141,7 +141,7 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= OTP =================
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    otp = random.randint(768904, 4579, 567878, 93456, 023682)
+    otp = random.randint(100000, 999999)
 
     await q.answer()
     await q.edit_message_text(
