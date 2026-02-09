@@ -1,4 +1,5 @@
 import os
+from bson import ObjectId
 import random
 from pymongo import MongoClient
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -99,6 +100,9 @@ async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     kb = []
 
+    # ❌ DELETE LINE REMOVED
+    # numbers_col.delete_one({"_id": num_id})
+
     for n in numbers_col.find():
         country = n.get("country", "??")
         points = n.get("points", 0)
@@ -119,7 +123,7 @@ async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📲 *Select a number*",
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown"
-    )
+                  )
 
     await q.answer()
     await q.edit_message_text(
@@ -130,7 +134,7 @@ async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    context.user_data["buy"] = q.data.split("_")[1]
+    context.user_data["buy"] = q.data.split("_", 1)[1]
 
     await q.answer()
     await q.edit_message_text(
@@ -141,14 +145,19 @@ async def confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("⬅️ Back", callback_data="back")
             ]
         ])
-    )
+        )
 
 async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user = get_user(q.from_user.id)
-    country = context.user_data["buy"]
 
-    num = numbers_col.find_one({"country": country})
+    try:
+        num_id = ObjectId(context.user_data["buy"])
+    except:
+        await q.answer("Invalid number", show_alert=True)
+        return
+
+    num = numbers_col.find_one({"_id": num_id})
     if not num:
         await q.answer("Number not available", show_alert=True)
         return
@@ -157,28 +166,19 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("Not enough points", show_alert=True)
         return
 
+    # success
     user["points"] -= num["points"]
-    user["number"] = num.get("number", "+0000000000")
+    user["number"] = num["number"]
     save_user(user)
 
     await q.edit_message_text(
-        f"📱 *Number Purchased*\n\n`{user['number']}`",
+        f"📱 *Number Purchased*\n\n`{num['number']}`",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("📩 Get OTP", callback_data="otp"),
                 InlineKeyboardButton("⬅️ Back", callback_data="back")
             ]
         ]),
-        parse_mode="Markdown"
-    )
-
-# ================= OTP =================
-async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    otp = random.randint(100000, 999999)
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        f"📩 *Your OTP*\n\n`{otp}`",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
         parse_mode="Markdown"
     )
 
@@ -295,6 +295,30 @@ async def addnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ Number added\n{country} | {number} | {points} pts"
     )
+
+
+async def delnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /delnumber NUMBER_ID"
+        )
+        return
+
+    try:
+        num_id = ObjectId(context.args[0])
+    except:
+        await update.message.reply_text("❌ Invalid number ID")
+        return
+
+    res = numbers_col.delete_one({"_id": num_id})
+
+    if res.deleted_count == 0:
+        await update.message.reply_text("❌ Number not found")
+    else:
+        await update.message.reply_text("✅ Number deleted")
 # ================= REFER =================
 async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -315,6 +339,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("addpoints", addpoints))
     app.add_handler(CommandHandler("addnumber", addnumber))
+    app.add_handler(CommandHandler("delnumber", delnumber))
 
     # ---- CALLBACK QUERY HANDLERS (ORDER MATTERS) ----
     app.add_handler(CallbackQueryHandler(profile, "^profile$"))
