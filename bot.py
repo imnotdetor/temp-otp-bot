@@ -19,7 +19,7 @@ db = client["otpbot"]
 users_col = db["users"]
 numbers_col = db["numbers"]
 
-================= DATA HELPERS =================
+#================= DATA HELPERS =================
 
 def get_user(uid):
 uid = str(uid)
@@ -39,7 +39,7 @@ return user
 def save_user(user):
 users_col.update_one({"_id": user["_id"]}, {"$set": user})
 
-================= MAIN MENU =================
+#================= MAIN MENU =================
 
 async def show_main_menu(target, context):
 text = (
@@ -63,7 +63,7 @@ if isinstance(target, Update):
 else:  
     await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
-================= START + REFERRAL =================
+#================= START + REFERRAL =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 uid = str(update.effective_user.id)
