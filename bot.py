@@ -1,6 +1,6 @@
-import json
 import os
 import random
+from pymongo import MongoClient
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -9,34 +9,37 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-DATA_FILE = "data.json"
+MONGO_URI = os.getenv("MONGO_URI")
+
+# ================= MONGO =================
+client = MongoClient(MONGO_URI)
+db = client["otpbot"]
+users_col = db["users"]
+numbers_col = db["numbers"]
 
 # ================= DATA HELPERS =================
-def load_data():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-def get_user(data, uid):
+def get_user(uid):
     uid = str(uid)
-    if uid not in data["users"]:
-        data["users"][uid] = {
+    user = users_col.find_one({"_id": uid})
+    if not user:
+        user = {
+            "_id": uid,
             "points": 0,
             "number": None,
             "deposit": 0,
             "pending_deposit": 0,
             "referred_by": None
         }
-    return data["users"][uid]
+        users_col.insert_one(user)
+    return user
+
+def save_user(user):
+    users_col.update_one({"_id": user["_id"]}, {"$set": user})
 
 # ================= MAIN MENU =================
 async def show_main_menu(target, context):
     text = (
         "📲 *Virtual Number OTP Bot*\n\n"
-        "This bot provides virtual numbers for OTP verification.\n"
         "Buy numbers, receive OTPs, deposit balance & earn via referrals."
     )
 
@@ -52,84 +55,64 @@ async def show_main_menu(target, context):
     ]
 
     if isinstance(target, Update):
-        await target.message.reply_text(
-            text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
-        )
+        await target.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
     else:
-        await target.edit_message_text(
-            text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
-        )
+        await target.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
-# ================= START + AUTO REFERRAL =================
+# ================= START + REFERRAL =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = load_data()
     uid = str(update.effective_user.id)
+    user = get_user(uid)
 
-    is_new = uid not in data["users"]
-    user = get_user(data, uid)
+    if user["referred_by"] is None and context.args:
+        ref = context.args[0]
+        if ref != uid and users_col.find_one({"_id": ref}):
+            user["referred_by"] = ref
+            users_col.update_one({"_id": ref}, {"$inc": {"points": 1}})
+            save_user(user)
 
-    if is_new and context.args:
-        ref_id = context.args[0]
-        if ref_id != uid and ref_id in data["users"]:
-            user["referred_by"] = ref_id
-            data["users"][ref_id]["points"] += 1
-
-    save_data(data)
     await show_main_menu(update, context)
 
 # ================= BACK =================
 async def back(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    await show_main_menu(q, context)
+    await update.callback_query.answer()
+    await show_main_menu(update.callback_query, context)
 
 # ================= PROFILE =================
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    data = load_data()
-    u = get_user(data, q.from_user.id)
+    user = get_user(q.from_user.id)
 
     await q.answer()
     await q.edit_message_text(
         f"👤 *Your Profile*\n\n"
-        f"🎁 Points: {u['points']}\n"
-        f"📱 Active Number: {u['number'] or 'None'}\n"
-        f"💳 Total Deposit: ₹{u['deposit']}\n"
-        f"👥 Referred By: {u['referred_by'] or 'None'}",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
-        ),
+        f"🎁 Points: {user['points']}\n"
+        f"📱 Active Number: {user['number'] or 'None'}\n"
+        f"💳 Total Deposit: ₹{user['deposit']}\n"
+        f"👥 Referred By: {user['referred_by'] or 'None'}",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
         parse_mode="Markdown"
     )
 
 # ================= BUY NUMBERS =================
 async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    data = load_data()
-    rows = []
+    kb = []
 
-    temp = []
-    for c, d in data["numbers"].items():
-        flag = "🇮🇳" if c == "IN" else "🇺🇸"
-        temp.append(
+    for n in numbers_col.find():
+        kb.append([
             InlineKeyboardButton(
-                f"{flag} {c} – {d['points']} pts",
-                callback_data=f"sel_{c}"
+                f"{n['country']} – {n['points']} pts",
+                callback_data=f"sel_{n['country']}"
             )
-        )
-        if len(temp) == 2:
-            rows.append(temp)
-            temp = []
+        ])
 
-    if temp:
-        rows.append(temp)
-
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="back")])
+    kb.append([InlineKeyboardButton("⬅️ Back", callback_data="back")])
 
     await q.answer()
     await q.edit_message_text(
         "📲 *Select a number*",
-        reply_markup=InlineKeyboardMarkup(rows),
+        reply_markup=InlineKeyboardMarkup(kb),
         parse_mode="Markdown"
     )
 
@@ -150,21 +133,24 @@ async def confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    data = load_data()
-    u = get_user(data, q.from_user.id)
-    c = context.user_data["buy"]
+    user = get_user(q.from_user.id)
+    country = context.user_data["buy"]
 
-    cost = data["numbers"][c]["points"]
-    if u["points"] < cost:
+    num = numbers_col.find_one({"country": country})
+    if not num:
+        await q.answer("Number not available", show_alert=True)
+        return
+
+    if user["points"] < num["points"]:
         await q.answer("Not enough points", show_alert=True)
         return
 
-    u["points"] -= cost
-    u["number"] = data["numbers"][c]["number"]
-    save_data(data)
+    user["points"] -= num["points"]
+    user["number"] = num.get("number", "+0000000000")
+    save_user(user)
 
     await q.edit_message_text(
-        f"📱 *Number Purchased*\n\n`{u['number']}`",
+        f"📱 *Number Purchased*\n\n`{user['number']}`",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("📩 Get OTP", callback_data="otp"),
@@ -176,15 +162,11 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= OTP =================
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
     otp = random.randint(100000, 999999)
-
-    await q.answer()
-    await q.edit_message_text(
+    await update.callback_query.answer()
+    await update.callback_query.edit_message_text(
         f"📩 *Your OTP*\n\n`{otp}`",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
-        ),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
         parse_mode="Markdown"
     )
 
@@ -195,11 +177,8 @@ async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await q.answer()
     await q.edit_message_text(
-        "💰 *Deposit Balance*\n\n"
-        "Enter amount (minimum ₹10)",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
-        ),
+        "💰 *Deposit Balance*\n\nEnter amount (minimum ₹10)",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
         parse_mode="Markdown"
     )
 
@@ -210,33 +189,29 @@ async def deposit_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         amount = int(update.message.text)
     except ValueError:
-        await update.message.reply_text("❌ Enter a valid number")
+        await update.message.reply_text("❌ Enter a valid amount")
         return
 
     if amount < 10:
         await update.message.reply_text("❌ Minimum deposit is ₹10")
         return
 
-    data = load_data()
-    u = get_user(data, update.effective_user.id)
-    u["pending_deposit"] = amount
-    save_data(data)
+    user = get_user(update.effective_user.id)
+    user["pending_deposit"] = amount
+    save_user(user)
 
     context.user_data["awaiting_amount"] = False
     context.user_data["awaiting_ss"] = True
 
     await update.message.reply_text(
-        f"💰 Amount: ₹{amount}\n\n"
-        "UPI ID:\n`7309248020@fam`\n\n"
-        "Send payment screenshot"
+        f"💰 Amount: ₹{amount}\n\nUPI ID:\n`7309248020@fam`\n\nSend payment screenshot",
+        parse_mode="Markdown"
     )
 
-# ================= SCREENSHOT =================
 async def screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_ss"):
         uid = update.message.from_user.id
-        data = load_data()
-        amt = data["users"][str(uid)]["pending_deposit"]
+        user = get_user(uid)
 
         kb = [[
             InlineKeyboardButton("✅ Approve", callback_data=f"ap_{uid}"),
@@ -246,7 +221,7 @@ async def screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_photo(
             ADMIN_ID,
             update.message.photo[-1].file_id,
-            caption=f"Deposit request\nUser: {uid}\nAmount: ₹{amt}",
+            caption=f"Deposit Request\nUser: {uid}\nAmount: ₹{user['pending_deposit']}",
             reply_markup=InlineKeyboardMarkup(kb)
         )
 
@@ -260,21 +235,44 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     action, uid = q.data.split("_")
-    data = load_data()
-    u = get_user(data, uid)
+    user = get_user(uid)
 
     if action == "ap":
-        amt = u["pending_deposit"]
-        u["deposit"] += amt
-        u["pending_deposit"] = 0
-        save_data(data)
+        amt = user["pending_deposit"]
+        user["deposit"] += amt
+        user["pending_deposit"] = 0
+        save_user(user)
         await context.bot.send_message(uid, f"✅ Deposit approved\n₹{amt}")
         await q.edit_message_caption("Approved ✅")
     else:
-        u["pending_deposit"] = 0
-        save_data(data)
+        user["pending_deposit"] = 0
+        save_user(user)
         await context.bot.send_message(uid, "❌ Deposit rejected")
         await q.edit_message_caption("Rejected ❌")
+
+# ================= ADMIN COMMANDS =================
+async def addpoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    uid, pts = context.args
+    user = get_user(uid)
+    user["points"] += int(pts)
+    save_user(user)
+
+    await update.message.reply_text(f"✅ Added {pts} points to {uid}")
+
+async def addnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    country, points, number = context.args
+    numbers_col.update_one(
+        {"country": country},
+        {"$set": {"country": country, "points": int(points), "number": number}},
+        upsert=True
+    )
+    await update.message.reply_text("✅ Number added/updated")
 
 # ================= REFER =================
 async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -284,12 +282,8 @@ async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await q.answer()
     await q.edit_message_text(
-        f"🎁 *Refer & Earn*\n\n"
-        f"1 Referral = 1 Point\n\n"
-        f"{link}",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
-        ),
+        f"🎁 *Refer & Earn*\n\n1 Referral = 1 Point\n\n{link}",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
         parse_mode="Markdown"
     )
 
@@ -298,16 +292,18 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("addpoints", addpoints))
+    app.add_handler(CommandHandler("addnumber", addnumber))
 
-    app.add_handler(CallbackQueryHandler(profile, pattern="^profile$"))
-    app.add_handler(CallbackQueryHandler(buy_menu, pattern="^buy$"))
-    app.add_handler(CallbackQueryHandler(confirm_buy, pattern="^sel_"))
-    app.add_handler(CallbackQueryHandler(buy_ok, pattern="^buy_ok$"))
-    app.add_handler(CallbackQueryHandler(get_otp, pattern="^otp$"))
-    app.add_handler(CallbackQueryHandler(deposit, pattern="^deposit$"))
-    app.add_handler(CallbackQueryHandler(refer, pattern="^refer$"))
-    app.add_handler(CallbackQueryHandler(admin_action, pattern="^(ap_|rej_)"))
-    app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
+    app.add_handler(CallbackQueryHandler(profile, "^profile$"))
+    app.add_handler(CallbackQueryHandler(buy_menu, "^buy$"))
+    app.add_handler(CallbackQueryHandler(confirm_buy, "^sel_"))
+    app.add_handler(CallbackQueryHandler(buy_ok, "^buy_ok$"))
+    app.add_handler(CallbackQueryHandler(get_otp, "^otp$"))
+    app.add_handler(CallbackQueryHandler(deposit, "^deposit$"))
+    app.add_handler(CallbackQueryHandler(refer, "^refer$"))
+    app.add_handler(CallbackQueryHandler(admin_action, "^(ap_|rej_)"))
+    app.add_handler(CallbackQueryHandler(back, "^back$"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, deposit_amount))
     app.add_handler(MessageHandler(filters.PHOTO, screenshot))
