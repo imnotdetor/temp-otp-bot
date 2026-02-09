@@ -141,7 +141,7 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= OTP =================
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    otp = random.randint(100000, 999999)
+    otp = random.randint(768904, 4579, 567878, 93456, 023682)
 
     await q.answer()
     await q.edit_message_text(
@@ -186,7 +186,7 @@ async def deposit_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"💰 Deposit Amount: ₹{amount}\n\n"
-        "UPI ID:\n`yourupi@upi`\n\n"
+        "UPI ID:\n`7309248020@fam`\n\n"
         "Payment ke baad screenshot bhejo",
         parse_mode="Markdown"
     )
