@@ -366,19 +366,6 @@ async def listnumbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await update.message.reply_text(text, parse_mode="Markdown")
-# ================= REFER =================
-async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    uid = q.from_user.id
-    link = f"https://t.me/{context.bot.username}?start={uid}"
-
-    await q.answer()
-    await q.edit_message_text(
-        f"🎁 *Refer & Earn*\n\n1 Referral = 1 Point\n\n{link}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
-        parse_mode="Markdown"
-    )
-
 # ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
