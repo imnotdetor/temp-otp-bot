@@ -1,4 +1,6 @@
 import os
+import requests
+import time
 from bson import ObjectId
 import random
 from pymongo import MongoClient
@@ -12,6 +14,13 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 MONGO_URI = os.getenv("MONGO_URI")
 
+FIVESIM_API = "https://5sim.net/v1"
+FIVESIM_KEY = os.getenv("FIVESIM_API_KEY")
+
+HEADERS = {
+    "Authorization": f"Bearer {FIVESIM_KEY}",
+    "Accept": "application/json"
+}
 # ================= MONGO =================
 client = MongoClient(MONGO_URI)
 db = client["otpbot"]
@@ -37,6 +46,25 @@ def get_user(uid):
 def save_user(user):
     users_col.update_one({"_id": user["_id"]}, {"$set": user})
 
+def buy_5sim_number(country="poland", operator="any", service="other"):
+    url = f"{FIVESIM_API}/user/buy/activation/{country}/{operator}/{service}"
+    r = requests.get(url, headers=HEADERS, timeout=20)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+
+def check_5sim_sms(order_id):
+    url = f"{FIVESIM_API}/user/check/{order_id}"
+    r = requests.get(url, headers=HEADERS, timeout=20)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+
+def finish_5sim(order_id):
+    url = f"{FIVESIM_API}/user/finish/{order_id}"
+    requests.get(url, headers=HEADERS)
 # ================= MAIN MENU =================
 async def show_main_menu(target, context):
     text = (
@@ -144,55 +172,72 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user = get_user(q.from_user.id)
 
-    try:
-        num_id = ObjectId(context.user_data["buy"])
-    except:
-        await q.answer("Invalid number", show_alert=True)
-        return
+    PRICE = 1  # 1 point = 1 number (example)
 
-    num = numbers_col.find_one({"_id": num_id})
-    if not num:
-        await q.answer("Number not available", show_alert=True)
-        return
-
-    # 🔥 IMPORTANT FIX: price ko int me convert karo
-    price = int(num.get("points", 0))
-
-    if user["points"] < price:
+    if user["points"] < PRICE:
         await q.answer("Not enough points", show_alert=True)
         return
 
-    # ✅ SUCCESS
-    user["points"] -= price
-    user["number"] = num.get("number")
+    await q.answer("Buying number...")
+
+    data = buy_5sim_number(
+        country="poland",
+        operator="any",
+        service="other"   # generic / low-strict services
+    )
+
+    if not data or "phone" not in data:
+        await q.edit_message_text("❌ Number not available right now")
+        return
+
+    # save order info
+    context.user_data["5sim"] = {
+        "order_id": data["id"],
+        "phone": data["phone"]
+    }
+
+    user["points"] -= PRICE
+    user["number"] = data["phone"]
     save_user(user)
 
-    numbers_col.delete_one({"_id": num_id})
-
     await q.edit_message_text(
-        f"📱 *Number Purchased*\n\n`{user['number']}`",
+        f"📱 *Number Purchased*\n\n`{data['phone']}`",
         reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📩 Get OTP", callback_data="otp"),
-                InlineKeyboardButton("⬅️ Back", callback_data="back")
-            ]
+            [InlineKeyboardButton("📩 Get OTP", callback_data="otp")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="back")]
         ]),
         parse_mode="Markdown"
     )
 # ================= OTP =================
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    await q.answer("Checking OTP...")
 
-    otp = random.randint(100000, 999999)
+    info = context.user_data.get("5sim")
+    if not info:
+        await q.edit_message_text("❌ No active number")
+        return
 
-    await q.answer()
-    await q.edit_message_text(
-        f"📩 *Your OTP*\n\n`{otp}`",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-        ]),
-        parse_mode="Markdown"
-    )
+    order_id = info["order_id"]
+
+    for _ in range(10):  # wait ~50 sec
+        data = check_5sim_sms(order_id)
+        if data and data.get("sms"):
+            code = data["sms"][0]["code"]
+            finish_5sim(order_id)
+
+            await q.edit_message_text(
+                f"📩 *OTP Received*\n\n`{code}`",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back", callback_data="back")]
+                ])
+            )
+            return
+
+        time.sleep(5)
+
+    await q.edit_message_text("⌛ OTP not received, try again later")
 # ================= DEPOSIT =================
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
