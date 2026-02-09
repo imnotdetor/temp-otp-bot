@@ -100,14 +100,26 @@ async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = []
 
     for n in numbers_col.find():
+        country = n.get("country", "??")
+        points = n.get("points", 0)
+        number = n.get("number", "")
+
         kb.append([
             InlineKeyboardButton(
-                f"{n['country']} – {n['points']} pts",
-                callback_data=f"sel_{n['country']}"
+                f"{country} | {number} | {points} pts",
+                callback_data=f"sel_{n['_id']}"
             )
         ])
 
+    # back button ALWAYS last
     kb.append([InlineKeyboardButton("⬅️ Back", callback_data="back")])
+
+    await q.answer()
+    await q.edit_message_text(
+        "📲 *Select a number*",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown"
+    )
 
     await q.answer()
     await q.edit_message_text(
@@ -266,14 +278,23 @@ async def addnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    country, points, number = context.args
-    numbers_col.update_one(
-        {"country": country},
-        {"$set": {"country": country, "points": int(points), "number": number}},
-        upsert=True
-    )
-    await update.message.reply_text("✅ Number added/updated")
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "Usage: /addnumber COUNTRY POINTS NUMBER"
+        )
+        return
 
+    country, points, number = context.args
+
+    numbers_col.insert_one({
+        "country": country,
+        "points": int(points),
+        "number": number
+    })
+
+    await update.message.reply_text(
+        f"✅ Number added\n{country} | {number} | {points} pts"
+    )
 # ================= REFER =================
 async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -295,16 +316,28 @@ def main():
     app.add_handler(CommandHandler("addpoints", addpoints))
     app.add_handler(CommandHandler("addnumber", addnumber))
 
+    # ---- CALLBACK QUERY HANDLERS (ORDER MATTERS) ----
     app.add_handler(CallbackQueryHandler(profile, "^profile$"))
     app.add_handler(CallbackQueryHandler(buy_menu, "^buy$"))
+
+    # buy flow
     app.add_handler(CallbackQueryHandler(confirm_buy, "^sel_"))
     app.add_handler(CallbackQueryHandler(buy_ok, "^buy_ok$"))
     app.add_handler(CallbackQueryHandler(get_otp, "^otp$"))
+
+    # deposit
     app.add_handler(CallbackQueryHandler(deposit, "^deposit$"))
+
+    # 🔥 REFER MUST COME BEFORE BACK
     app.add_handler(CallbackQueryHandler(refer, "^refer$"))
+
+    # admin approve/reject
     app.add_handler(CallbackQueryHandler(admin_action, "^(ap_|rej_)"))
+
+    # 🔥 BACK ALWAYS LAST
     app.add_handler(CallbackQueryHandler(back, "^back$"))
 
+    # message handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, deposit_amount))
     app.add_handler(MessageHandler(filters.PHOTO, screenshot))
 
