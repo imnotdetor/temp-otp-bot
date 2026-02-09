@@ -167,6 +167,8 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user["number"] = num.get("number")
     save_user(user)
 
+    numbers_col.delete_one({"_id": num_id})
+
     await q.edit_message_text(
         f"📱 *Number Purchased*\n\n`{user['number']}`",
         reply_markup=InlineKeyboardMarkup([
