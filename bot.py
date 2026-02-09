@@ -1,4 +1,5 @@
 import os
+import asyncio
 import requests
 import time
 from bson import ObjectId
@@ -126,72 +127,46 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= BUY NUMBERS =================
 async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    kb = []
-
-    # ❌ DELETE LINE REMOVED
-    # numbers_col.delete_one({"_id": num_id})
-
-    for n in numbers_col.find():
-        country = n.get("country", "??")
-        points = n.get("points", 0)
-        number = n.get("number", "")
-
-        kb.append([
-            InlineKeyboardButton(
-                f"{country} | {number} | {points} pts",
-                callback_data=f"sel_{n['_id']}"
-            )
-        ])
-
-    # back button ALWAYS last
-    kb.append([InlineKeyboardButton("⬅️ Back", callback_data="back")])
-
     await q.answer()
+
+    kb = [
+        [InlineKeyboardButton("🇵🇱 Poland | OTP | 1 Point", callback_data="buy_ok")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="back")]
+    ]
+
     await q.edit_message_text(
-        "📲 *Select a number*",
-        reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode="Markdown"
+        "📲 *Buy Virtual Number*\n\n"
+        "• Country: Poland\n"
+        "• Service: Low-strict websites\n"
+        "• Price: 1 Point\n\n"
+        "👇 Buy now:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb)
     )
-
-async def confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    context.user_data["buy"] = q.data.split("_", 1)[1]
-
-    await q.answer()
-    await q.edit_message_text(
-        "Confirm purchase?",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Buy", callback_data="buy_ok"),
-                InlineKeyboardButton("⬅️ Back", callback_data="back")
-            ]
-        ])
-        )
 
 async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    user = get_user(q.from_user.id)
+    await q.answer("Buying number...")
 
-    PRICE = 1  # 1 point = 1 number (example)
+    user = get_user(q.from_user.id)
+    PRICE = 1
 
     if user["points"] < PRICE:
-        await q.answer("Not enough points", show_alert=True)
+        await q.edit_message_text("❌ Not enough points")
         return
-
-    await q.answer("Buying number...")
 
     data = buy_5sim_number(
         country="poland",
         operator="any",
-        service="other"   # generic / low-strict services
+        service="other"
     )
 
     if not data or "phone" not in data:
-        await q.edit_message_text("❌ Number not available right now")
+        await q.edit_message_text("❌ Number not available, try later")
         return
 
-    # save order info
-    context.user_data["5sim"] = {
+    # save session
+    context.user_data["five_sim"] = {
         "order_id": data["id"],
         "phone": data["phone"]
     }
@@ -201,27 +176,30 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user(user)
 
     await q.edit_message_text(
-        f"📱 *Number Purchased*\n\n`{data['phone']}`",
+        f"📱 *Number Purchased*\n\n"
+        f"{data['phone']}\n\n"
+        "Use this number on website, then click *Get OTP*",
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📩 Get OTP", callback_data="otp")],
             [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-        ]),
-        parse_mode="Markdown"
+        ])
     )
 # ================= OTP =================
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer("Checking OTP...")
+    await q.answer("Waiting for OTP...")
 
-    info = context.user_data.get("5sim")
+    info = context.user_data.get("five_sim")
     if not info:
         await q.edit_message_text("❌ No active number")
         return
 
     order_id = info["order_id"]
 
-    for _ in range(10):  # wait ~50 sec
+    for _ in range(10):
         data = check_5sim_sms(order_id)
+
         if data and data.get("sms"):
             code = data["sms"][0]["code"]
             finish_5sim(order_id)
@@ -235,9 +213,9 @@ async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        time.sleep(5)
+        await asyncio.sleep(5)
 
-    await q.edit_message_text("⌛ OTP not received, try again later")
+    await q.edit_message_text("⌛ OTP not received. Try again later.")
 # ================= DEPOSIT =================
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -423,7 +401,6 @@ def main():
     app.add_handler(CallbackQueryHandler(buy_menu, "^buy$"))
 
     # buy flow
-    app.add_handler(CallbackQueryHandler(confirm_buy, "^sel_"))
     app.add_handler(CallbackQueryHandler(buy_ok, "^buy_ok$"))
     app.add_handler(CallbackQueryHandler(get_otp, "^otp$"))
 
