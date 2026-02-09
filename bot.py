@@ -155,17 +155,20 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("Number not available", show_alert=True)
         return
 
-    if user["points"] < num["points"]:
+    # 🔥 IMPORTANT FIX: price ko int me convert karo
+    price = int(num.get("points", 0))
+
+    if user["points"] < price:
         await q.answer("Not enough points", show_alert=True)
         return
 
-    # success
-    user["points"] -= num["points"]
-    user["number"] = num["number"]
+    # ✅ SUCCESS
+    user["points"] -= price
+    user["number"] = num.get("number")
     save_user(user)
 
     await q.edit_message_text(
-        f"📱 *Number Purchased*\n\n`{num['number']}`",
+        f"📱 *Number Purchased*\n\n`{user['number']}`",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("📩 Get OTP", callback_data="otp"),
@@ -174,7 +177,6 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]),
         parse_mode="Markdown"
     )
-
 # ================= OTP =================
 async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -326,6 +328,21 @@ async def delnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Number not found")
     else:
         await update.message.reply_text("✅ Number deleted")
+
+async def listnumbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    text = "📋 *Available Numbers*\n\n"
+    for n in numbers_col.find():
+        text += (
+            f"ID: `{n['_id']}`\n"
+            f"Country: {n['country']}\n"
+            f"Number: {n['number']}\n"
+            f"Points: {n['points']} pts\n\n"
+        )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 # ================= REFER =================
 async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -347,6 +364,7 @@ def main():
     app.add_handler(CommandHandler("addpoints", addpoints))
     app.add_handler(CommandHandler("addnumber", addnumber))
     app.add_handler(CommandHandler("delnumber", delnumber))
+    app.add_handler(CommandHandler("listnumbers", listnumbers))
 
     # ---- CALLBACK QUERY HANDLERS (ORDER MATTERS) ----
     app.add_handler(CallbackQueryHandler(profile, "^profile$"))
