@@ -47,9 +47,10 @@ def get_user(uid):
 def save_user(user):
     users_col.update_one({"_id": user["_id"]}, {"$set": user})
 
-def buy_5sim_number(country="poland", operator="any", service="other"):
+def buy_5sim_number(country="poland", operator="any", service="telegram"):
     url = f"{FIVESIM_API}/user/buy/activation/{country}/{operator}/{service}"
     r = requests.get(url, headers=HEADERS, timeout=20)
+    print(r.text)  # DEBUG
     if r.status_code != 200:
         return None
     return r.json()
@@ -156,9 +157,9 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     data = buy_5sim_number(
-        country="poland",
-        operator="any",
-        service="other"
+    country="poland",
+    operator="any",
+    service="telegram"
     )
 
     if not data or "phone" not in data:
