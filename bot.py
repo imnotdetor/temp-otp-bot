@@ -32,6 +32,34 @@ def get_user(data, uid):
         }
     return data["users"][uid]
 
+# ================= MAIN MENU =================
+async def show_main_menu(target, context):
+    text = (
+        "📲 *Virtual Number OTP Bot*\n\n"
+        "This bot provides virtual numbers for OTP verification.\n"
+        "Buy numbers, receive OTPs, deposit balance & earn via referrals."
+    )
+
+    kb = [
+        [
+            InlineKeyboardButton("👤 Profile", callback_data="profile"),
+            InlineKeyboardButton("📲 Buy Numbers", callback_data="buy")
+        ],
+        [
+            InlineKeyboardButton("💰 Deposit", callback_data="deposit"),
+            InlineKeyboardButton("🎁 Refer & Earn", callback_data="refer")
+        ]
+    ]
+
+    if isinstance(target, Update):
+        await target.message.reply_text(
+            text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+        )
+    else:
+        await target.edit_message_text(
+            text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
+        )
+
 # ================= START + AUTO REFERRAL =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
@@ -47,23 +75,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data["users"][ref_id]["points"] += 1
 
     save_data(data)
+    await show_main_menu(update, context)
 
-    text = (
-        "📲 *Virtual Number OTP Bot*\n\n"
-        "This bot provides virtual numbers for OTP verification.\n"
-        "Buy numbers, receive OTPs, deposit balance & earn via referrals."
-    )
-
-    kb = [
-        [InlineKeyboardButton("👤 Profile", callback_data="profile")],
-        [InlineKeyboardButton("📲 Buy Numbers", callback_data="buy")],
-        [InlineKeyboardButton("💰 Deposit", callback_data="deposit")],
-        [InlineKeyboardButton("🎁 Refer & Earn", callback_data="refer")]
-    ]
-
-    await update.message.reply_text(
-        text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown"
-    )
+# ================= BACK =================
+async def back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    await show_main_menu(q, context)
 
 # ================= PROFILE =================
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,6 +96,9 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📱 Active Number: {u['number'] or 'None'}\n"
         f"💳 Total Deposit: ₹{u['deposit']}\n"
         f"👥 Referred By: {u['referred_by'] or 'None'}",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
+        ),
         parse_mode="Markdown"
     )
 
@@ -85,21 +106,30 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     data = load_data()
-    kb = []
+    rows = []
 
+    temp = []
     for c, d in data["numbers"].items():
         flag = "🇮🇳" if c == "IN" else "🇺🇸"
-        kb.append([
+        temp.append(
             InlineKeyboardButton(
                 f"{flag} {c} – {d['points']} pts",
                 callback_data=f"sel_{c}"
             )
-        ])
+        )
+        if len(temp) == 2:
+            rows.append(temp)
+            temp = []
+
+    if temp:
+        rows.append(temp)
+
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="back")])
 
     await q.answer()
     await q.edit_message_text(
         "📲 *Select a number*",
-        reply_markup=InlineKeyboardMarkup(kb),
+        reply_markup=InlineKeyboardMarkup(rows),
         parse_mode="Markdown"
     )
 
@@ -110,9 +140,12 @@ async def confirm_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     await q.edit_message_text(
         "Confirm purchase?",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("✅ Confirm Buy", callback_data="buy_ok")]]
-        )
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Buy", callback_data="buy_ok"),
+                InlineKeyboardButton("⬅️ Back", callback_data="back")
+            ]
+        ])
     )
 
 async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -132,9 +165,12 @@ async def buy_ok(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await q.edit_message_text(
         f"📱 *Number Purchased*\n\n`{u['number']}`",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("📩 Get OTP", callback_data="otp")]]
-        ),
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📩 Get OTP", callback_data="otp"),
+                InlineKeyboardButton("⬅️ Back", callback_data="back")
+            ]
+        ]),
         parse_mode="Markdown"
     )
 
@@ -146,10 +182,13 @@ async def get_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     await q.edit_message_text(
         f"📩 *Your OTP*\n\n`{otp}`",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
+        ),
         parse_mode="Markdown"
     )
 
-# ================= DEPOSIT (CUSTOM AMOUNT) =================
+# ================= DEPOSIT =================
 async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     context.user_data["awaiting_amount"] = True
@@ -157,8 +196,10 @@ async def deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     await q.edit_message_text(
         "💰 *Deposit Balance*\n\n"
-        "Enter deposit amount (minimum ₹10)\n\n"
-        "_Example: 25_",
+        "Enter amount (minimum ₹10)",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
+        ),
         parse_mode="Markdown"
     )
 
@@ -185,12 +226,12 @@ async def deposit_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_ss"] = True
 
     await update.message.reply_text(
-        f"💰 Deposit Amount: ₹{amount}\n\n"
+        f"💰 Amount: ₹{amount}\n\n"
         "UPI ID:\n`7309248020@fam`\n\n"
-        "Payment ke baad screenshot bhejo",
-        parse_mode="Markdown"
+        "Send payment screenshot"
     )
 
+# ================= SCREENSHOT =================
 async def screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_ss"):
         uid = update.message.from_user.id
@@ -227,59 +268,13 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u["deposit"] += amt
         u["pending_deposit"] = 0
         save_data(data)
-        await context.bot.send_message(uid, f"✅ Deposit approved\nAmount: ₹{amt}")
+        await context.bot.send_message(uid, f"✅ Deposit approved\n₹{amt}")
         await q.edit_message_caption("Approved ✅")
     else:
         u["pending_deposit"] = 0
         save_data(data)
         await context.bot.send_message(uid, "❌ Deposit rejected")
         await q.edit_message_caption("Rejected ❌")
-
-# ================= ADMIN COMMANDS =================
-async def addpoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    uid, pts, order = context.args
-    data = load_data()
-    u = get_user(data, uid)
-    u["points"] += int(pts)
-    save_data(data)
-
-    await update.message.reply_text(
-        f"✅ {pts} points added to {uid}\nOrder ID: {order}"
-    )
-
-async def addnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    country, number, points = context.args
-    data = load_data()
-    data["numbers"][country] = {"number": number, "points": int(points)}
-    save_data(data)
-
-    await update.message.reply_text(
-        f"✅ Number added\nCountry: {country}\nPoints: {points}"
-    )
-
-async def setpoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    country, points = context.args
-    data = load_data()
-
-    if country not in data["numbers"]:
-        await update.message.reply_text("❌ Country not found")
-        return
-
-    data["numbers"][country]["points"] = int(points)
-    save_data(data)
-
-    await update.message.reply_text(
-        f"✅ Points updated\nCountry: {country}\nNew Points: {points}"
-    )
 
 # ================= REFER =================
 async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -291,7 +286,10 @@ async def refer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text(
         f"🎁 *Refer & Earn*\n\n"
         f"1 Referral = 1 Point\n\n"
-        f"Your link:\n{link}",
+        f"{link}",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Back", callback_data="back")]]
+        ),
         parse_mode="Markdown"
     )
 
@@ -300,18 +298,16 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("addpoints", addpoints))
-    app.add_handler(CommandHandler("addnumber", addnumber))
-    app.add_handler(CommandHandler("setpoints", setpoints))
 
-    app.add_handler(CallbackQueryHandler(profile, pattern="profile"))
-    app.add_handler(CallbackQueryHandler(buy_menu, pattern="buy"))
-    app.add_handler(CallbackQueryHandler(confirm_buy, pattern="sel_"))
-    app.add_handler(CallbackQueryHandler(buy_ok, pattern="buy_ok"))
-    app.add_handler(CallbackQueryHandler(get_otp, pattern="otp"))
-    app.add_handler(CallbackQueryHandler(deposit, pattern="deposit"))
-    app.add_handler(CallbackQueryHandler(admin_action, pattern="ap_|rej_"))
-    app.add_handler(CallbackQueryHandler(refer, pattern="refer"))
+    app.add_handler(CallbackQueryHandler(profile, pattern="^profile$"))
+    app.add_handler(CallbackQueryHandler(buy_menu, pattern="^buy$"))
+    app.add_handler(CallbackQueryHandler(confirm_buy, pattern="^sel_"))
+    app.add_handler(CallbackQueryHandler(buy_ok, pattern="^buy_ok$"))
+    app.add_handler(CallbackQueryHandler(get_otp, pattern="^otp$"))
+    app.add_handler(CallbackQueryHandler(deposit, pattern="^deposit$"))
+    app.add_handler(CallbackQueryHandler(refer, pattern="^refer$"))
+    app.add_handler(CallbackQueryHandler(admin_action, pattern="^(ap_|rej_)"))
+    app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, deposit_amount))
     app.add_handler(MessageHandler(filters.PHOTO, screenshot))
