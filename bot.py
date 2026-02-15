@@ -385,6 +385,20 @@ async def listnumbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    total_users = users_col.count_documents({})
+    total_numbers = numbers_col.count_documents({})
+
+    text = (
+        "📊 *Bot Statistics*\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"📲 Available Numbers: {total_numbers}"
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 #================= MAIN =================
 
 def main():
@@ -395,6 +409,7 @@ def main():
     app.add_handler(CommandHandler("addnumber", addnumber))
     app.add_handler(CommandHandler("delnumber", delnumber))
     app.add_handler(CommandHandler("listnumbers", listnumbers))
+    app.add_handler(CommandHandler("stats", stats))
 
     # ---- CALLBACK QUERY HANDLERS (ORDER MATTERS) ----
     app.add_handler(CallbackQueryHandler(profile, "^profile$"))
